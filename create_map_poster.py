@@ -493,6 +493,7 @@ def create_poster(
     display_city=None,
     display_country=None,
     fonts=None,
+    show_attribution=True,
 ):
     """
     Generate a complete map poster with roads, water, parks, and typography.
@@ -734,23 +735,24 @@ def create_poster(
     )
 
     # --- ATTRIBUTION (bottom right) ---
-    if FONTS:
-        font_attr = FontProperties(fname=FONTS["light"], size=8)
-    else:
-        font_attr = FontProperties(family="monospace", size=8)
+    if show_attribution:
+        if FONTS:
+            font_attr = FontProperties(fname=FONTS["light"], size=8)
+        else:
+            font_attr = FontProperties(family="monospace", size=8)
 
-    ax.text(
-        0.98,
-        0.02,
-        "© OpenStreetMap contributors",
-        transform=ax.transAxes,
-        color=THEME["text"],
-        alpha=0.5,
-        ha="right",
-        va="bottom",
-        fontproperties=font_attr,
-        zorder=11,
-    )
+        ax.text(
+            0.98,
+            0.02,
+            "© OpenStreetMap contributors",
+            transform=ax.transAxes,
+            color=THEME["text"],
+            alpha=0.5,
+            ha="right",
+            va="bottom",
+            fontproperties=font_attr,
+            zorder=11,
+        )
 
     # 5. Save
     print(f"Saving to {output_file}...")
@@ -926,7 +928,7 @@ Examples:
         "-H",
         type=float,
         default=16,
-        help="Image height in inches (default: 16, max: 20)",
+        help="Image height in inches (default: 16, max: 24)",
     )
     parser.add_argument(
         "--list-themes", action="store_true", help="List all available themes"
@@ -955,6 +957,12 @@ Examples:
         choices=["png", "svg", "pdf"],
         help="Output format for the poster (default: png)",
     )
+    parser.add_argument(
+        "--no-attribution",
+        dest="show_attribution",
+        action="store_false",
+        help="Hide the OpenStreetMap contributors attribution on the poster",
+    )
 
     args = parser.parse_args()
 
@@ -980,11 +988,11 @@ Examples:
             f"⚠ Width {args.width} exceeds the maximum allowed limit of 20. It's enforced as max limit 20."
         )
         args.width = 20.0
-    if args.height > 20:
+    if args.height > 24:
         print(
-            f"⚠ Height {args.height} exceeds the maximum allowed limit of 20. It's enforced as max limit 20."
+            f"⚠ Height {args.height} exceeds the maximum allowed limit of 24. It's enforced as max limit 24."
         )
-        args.height = 20.0
+        args.height = 24.0
 
     available_themes = get_available_themes()
     if not available_themes:
@@ -1037,6 +1045,7 @@ Examples:
                 display_city=args.display_city,
                 display_country=args.display_country,
                 fonts=custom_fonts,
+                show_attribution=args.show_attribution,
             )
 
         print("\n" + "=" * 50)

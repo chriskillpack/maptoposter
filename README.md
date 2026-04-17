@@ -78,7 +78,8 @@ python create_map_poster.py --city <city> --country <country> [options]
 | **OPTIONAL:** `--list-themes` | | List all available themes | |
 | **OPTIONAL:** `--all-themes` | | Generate posters for all available themes | |
 | **OPTIONAL:** `--width` | `-W` | Image width in inches | 12 (max: 20) |
-| **OPTIONAL:** `--height` | `-H` | Image height in inches | 16 (max: 20) |
+| **OPTIONAL:** `--height` | `-H` | Image height in inches | 16 (max: 24) |
+| **OPTIONAL:** `--no-attribution` | | Hide the "© OpenStreetMap contributors" text on the poster | attribution shown |
 
 ### Multilingual Support - i18n
 
