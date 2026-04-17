@@ -406,29 +406,30 @@ def get_crop_limits(g_proj, center_lat_lon, fig, dist):
     )
 
 
-def fetch_graph(point, dist) -> MultiDiGraph | None:
+def fetch_graph(point, dist, network_type="all") -> MultiDiGraph | None:
     """
     Fetch street network graph from OpenStreetMap.
 
-    Uses caching to avoid redundant downloads. Fetches all network types
+    Uses caching to avoid redundant downloads. Fetches the specified network type
     within the specified distance from the center point.
 
     Args:
         point: (latitude, longitude) tuple for center point
         dist: Distance in meters from center point
+        network_type: OSMnx network type (e.g. 'all', 'drive', 'walk', 'bike')
 
     Returns:
         MultiDiGraph of street network, or None if fetch fails
     """
     lat, lon = point
-    graph = f"graph_{lat}_{lon}_{dist}"
+    graph = f"graph_{lat}_{lon}_{dist}_{network_type}"
     cached = cache_get(graph)
     if cached is not None:
         print("✓ Using cached street network")
         return cast(MultiDiGraph, cached)
 
     try:
-        g = ox.graph_from_point(point, dist=dist, dist_type='bbox', network_type='all', truncate_by_edge=True)
+        g = ox.graph_from_point(point, dist=dist, dist_type='bbox', network_type=network_type, truncate_by_edge=True)
         # Rate limit between requests
         time.sleep(0.5)
         try:
@@ -495,6 +496,7 @@ def create_poster(
     fonts=None,
     show_attribution=True,
     coords_text=None,
+    network_type="all",
 ):
     """
     Generate a complete map poster with roads, water, parks, and typography.
@@ -534,7 +536,7 @@ def create_poster(
         # 1. Fetch Street Network
         pbar.set_description("Downloading street network")
         compensated_dist = dist * (max(height, width) / min(height, width)) / 4  # To compensate for viewport crop
-        g = fetch_graph(point, compensated_dist)
+        g = fetch_graph(point, compensated_dist, network_type=network_type)
         if g is None:
             raise RuntimeError("Failed to retrieve street network data.")
         pbar.update(1)
@@ -983,6 +985,14 @@ Examples:
         default=POSTERS_DIR,
         help=f"Directory where posters are saved (default: {POSTERS_DIR})",
     )
+    parser.add_argument(
+        "--network-type",
+        dest="network_type",
+        type=str,
+        default="all",
+        choices=["all", "all_public", "bike", "drive", "drive_service", "walk"],
+        help="OSMnx road network type to fetch (default: all). 'drive' excludes service/footway/cycleway.",
+    )
 
     args = parser.parse_args()
 
@@ -1069,6 +1079,7 @@ Examples:
                 fonts=custom_fonts,
                 show_attribution=args.show_attribution,
                 coords_text=args.coords_text,
+                network_type=args.network_type,
             )
 
         print("\n" + "=" * 50)
