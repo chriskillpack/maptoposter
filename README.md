@@ -80,6 +80,7 @@ python create_map_poster.py --city <city> --country <country> [options]
 | **OPTIONAL:** `--width` | `-W` | Image width in inches | 12 (max: 20) |
 | **OPTIONAL:** `--height` | `-H` | Image height in inches | 16 (max: 24) |
 | **OPTIONAL:** `--no-attribution` | | Hide the "© OpenStreetMap contributors" text on the poster | attribution shown |
+| **OPTIONAL:** `--coords-text` | | Replace the lat/lng coordinates line with a custom message. Use `{coords}` as a token to embed the formatted lat/lng (e.g. `"Home — {coords}"`) | lat/lng shown |
 
 ### Multilingual Support - i18n
 

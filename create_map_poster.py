@@ -494,6 +494,7 @@ def create_poster(
     display_country=None,
     fonts=None,
     show_attribution=True,
+    coords_text=None,
 ):
     """
     Generate a complete map poster with roads, water, parks, and typography.
@@ -705,13 +706,18 @@ def create_poster(
     )
 
     lat, lon = point
-    coords = (
+    formatted_coords = (
         f"{lat:.4f}° N / {lon:.4f}° E"
         if lat >= 0
         else f"{abs(lat):.4f}° S / {lon:.4f}° E"
     )
     if lon < 0:
-        coords = coords.replace("E", "W")
+        formatted_coords = formatted_coords.replace("E", "W")
+
+    if coords_text is not None:
+        coords = coords_text.replace("{coords}", formatted_coords)
+    else:
+        coords = formatted_coords
 
     ax.text(
         0.5,
@@ -963,6 +969,12 @@ Examples:
         action="store_false",
         help="Hide the OpenStreetMap contributors attribution on the poster",
     )
+    parser.add_argument(
+        "--coords-text",
+        dest="coords_text",
+        type=str,
+        help='Replace the lat/lng coordinates line with a custom message. Use "{coords}" as a token to embed the formatted lat/lng (e.g. "Home — {coords}")',
+    )
 
     args = parser.parse_args()
 
@@ -1046,6 +1058,7 @@ Examples:
                 display_country=args.display_country,
                 fonts=custom_fonts,
                 show_attribution=args.show_attribution,
+                coords_text=args.coords_text,
             )
 
         print("\n" + "=" * 50)
