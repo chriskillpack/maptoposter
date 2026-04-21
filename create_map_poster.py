@@ -22,12 +22,13 @@ import matplotlib.colors as mcolors
 import matplotlib.pyplot as plt
 import numpy as np
 import osmnx as ox
-from geopandas import GeoDataFrame
+from geopandas import GeoDataFrame, GeoSeries
 from geopy.geocoders import Nominatim
 from lat_lon_parser import parse
 from matplotlib.font_manager import FontProperties
 from networkx import MultiDiGraph
-from shapely.geometry import Point
+from shapely.geometry import Point, box
+from shapely.ops import polygonize, unary_union
 from tqdm import tqdm
 
 from font_management import load_fonts
@@ -480,6 +481,94 @@ def fetch_features(point, dist, tags, name) -> GeoDataFrame | None:
         return None
 
 
+def _is_on_sea_side(point, coastlines):
+    """
+    Test whether a point lies on the sea side of the nearest coastline.
+
+    Follows the OSM convention: walking along a coastline in its direction,
+    land is on the left and sea is on the right. In a y-up projected CRS this
+    means the 2D cross product (dx*vy - dy*vx) is negative for sea.
+    """
+    if not coastlines:
+        return False
+    nearest = min(coastlines, key=lambda line: line.distance(point))
+    if nearest.length <= 0:
+        return False
+    d = nearest.project(point)
+    eps = min(nearest.length * 0.01, 10.0)
+    d_before = max(0.0, d - eps)
+    d_after = min(nearest.length, d + eps)
+    if d_after <= d_before:
+        return False
+    p0 = nearest.interpolate(d_before)
+    p1 = nearest.interpolate(d_after)
+    pn = nearest.interpolate(d)
+    dx = p1.x - p0.x
+    dy = p1.y - p0.y
+    vx = point.x - pn.x
+    vy = point.y - pn.y
+    return (dx * vy - dy * vx) < 0
+
+
+def build_sea_polygon(coastlines_gdf, crop_xlim, crop_ylim, target_crs):
+    """
+    Build a sea polygon from natural=coastline ways within the crop bbox.
+
+    Projects coastlines into the graph CRS, clips them to the bbox, unions
+    the clipped coastlines with the bbox boundary, polygonizes the result,
+    and keeps pieces whose interior point lies on the sea side.
+
+    Returns None if no usable coastlines exist in the bbox.
+    """
+    if coastlines_gdf is None or coastlines_gdf.empty:
+        return None
+
+    try:
+        coastlines_gdf = coastlines_gdf.to_crs(target_crs)
+    except Exception as e:
+        print(f"Could not project coastlines: {e}")
+        return None
+
+    lines_gdf = coastlines_gdf[
+        coastlines_gdf.geometry.type.isin(["LineString", "MultiLineString"])
+    ]
+    if lines_gdf.empty:
+        return None
+
+    bbox = box(crop_xlim[0], crop_ylim[0], crop_xlim[1], crop_ylim[1])
+
+    clipped_lines = []
+    for geom in lines_gdf.geometry:
+        clipped = geom.intersection(bbox)
+        if clipped.is_empty:
+            continue
+        if clipped.geom_type == "LineString":
+            clipped_lines.append(clipped)
+        elif clipped.geom_type == "MultiLineString":
+            clipped_lines.extend(list(clipped.geoms))
+
+    if not clipped_lines:
+        return None
+
+    try:
+        network = unary_union([bbox.boundary] + clipped_lines)
+        polygons = list(polygonize(network))
+    except Exception as e:
+        print(f"Failed to polygonize coastlines: {e}")
+        return None
+
+    if not polygons:
+        return None
+
+    sea_polys = [
+        p for p in polygons if _is_on_sea_side(p.representative_point(), clipped_lines)
+    ]
+    if not sea_polys:
+        return None
+
+    return unary_union(sea_polys)
+
+
 def create_poster(
     city,
     country,
@@ -497,6 +586,7 @@ def create_poster(
     show_attribution=True,
     coords_text=None,
     network_type="all",
+    coastline_sea=False,
 ):
     """
     Generate a complete map poster with roads, water, parks, and typography.
@@ -527,8 +617,10 @@ def create_poster(
     print(f"\nGenerating map for {city}, {country}...")
 
     # Progress bar for data fetching
+    total_steps = 4 if coastline_sea else 3
+    coastlines = None
     with tqdm(
-        total=3,
+        total=total_steps,
         desc="Fetching map data",
         unit="step",
         bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt}",
@@ -561,6 +653,17 @@ def create_poster(
         )
         pbar.update(1)
 
+        # 4. Fetch Coastlines (optional, for building a sea polygon)
+        if coastline_sea:
+            pbar.set_description("Downloading coastlines")
+            coastlines = fetch_features(
+                point,
+                compensated_dist,
+                tags={"natural": "coastline"},
+                name="coastline",
+            )
+            pbar.update(1)
+
     print("✓ All data retrieved successfully!")
 
     # 2. Setup Plot
@@ -571,6 +674,26 @@ def create_poster(
 
     # Project graph to a metric CRS so distances and aspect are linear (meters)
     g_proj = ox.project_graph(g)
+
+    # Determine cropping limits to maintain the poster aspect ratio
+    crop_xlim, crop_ylim = get_crop_limits(g_proj, point, fig, compensated_dist)
+
+    # Optional sea polygon derived from natural=coastline (OSM stores open sea
+    # as implicit right-of-coastline, not as polygons). Plot beneath all other
+    # layers so water features (bays/rivers) and roads render on top.
+    if coastline_sea and coastlines is not None:
+        sea_poly = build_sea_polygon(
+            coastlines, crop_xlim, crop_ylim, g_proj.graph["crs"]
+        )
+        if sea_poly is not None and not sea_poly.is_empty:
+            GeoSeries([sea_poly], crs=g_proj.graph["crs"]).plot(
+                ax=ax,
+                facecolor=THEME["water"],
+                edgecolor="none",
+                zorder=0.3,
+            )
+        else:
+            print("⚠ No coastline-derived sea polygon produced for this area.")
 
     # 3. Plot Layers
     # Layer 1: Polygons (filter to only plot polygon/multipolygon geometries, not points)
@@ -600,8 +723,6 @@ def create_poster(
     edge_colors = get_edge_colors_by_type(g_proj)
     edge_widths = get_edge_widths_by_type(g_proj)
 
-    # Determine cropping limits to maintain the poster aspect ratio
-    crop_xlim, crop_ylim = get_crop_limits(g_proj, point, fig, compensated_dist)
     # Plot the projected graph and then apply the cropped limits
     ox.plot_graph(
         g_proj, ax=ax, bgcolor=THEME['bg'],
@@ -993,6 +1114,12 @@ Examples:
         choices=["all", "all_public", "bike", "drive", "drive_service", "walk"],
         help="OSMnx road network type to fetch (default: all). 'drive' excludes service/footway/cycleway.",
     )
+    parser.add_argument(
+        "--coastline-sea",
+        dest="coastline_sea",
+        action="store_true",
+        help="Derive a sea polygon from natural=coastline ways and render it as water. Fixes coastal cities (Manila, Singapore, etc.) where the open sea is not stored as an OSM polygon.",
+    )
 
     args = parser.parse_args()
 
@@ -1080,6 +1207,7 @@ Examples:
                 show_attribution=args.show_attribution,
                 coords_text=args.coords_text,
                 network_type=args.network_type,
+                coastline_sea=args.coastline_sea,
             )
 
         print("\n" + "=" * 50)

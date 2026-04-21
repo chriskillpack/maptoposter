@@ -83,6 +83,7 @@ python create_map_poster.py --city <city> --country <country> [options]
 | **OPTIONAL:** `--coords-text` | | Replace the lat/lng coordinates line with a custom message. Use `{coords}` as a token to embed the formatted lat/lng (e.g. `"Home — {coords}"`) | lat/lng shown |
 | **OPTIONAL:** `--output-dir` | `-o` | Directory where posters are saved | posters |
 | **OPTIONAL:** `--network-type` | | OSMnx road network type: `all`, `all_public`, `bike`, `drive`, `drive_service`, `walk`. Use `drive` to drop service/footway/cycleway on large-radius posters. | all |
+| **OPTIONAL:** `--coastline-sea` | | Derive a sea polygon from `natural=coastline` ways and render it as water. Fixes coastal cities (Manila, Singapore, etc.) where the open sea isn't stored as an OSM polygon. | off |
 
 ### Multilingual Support - i18n
 
